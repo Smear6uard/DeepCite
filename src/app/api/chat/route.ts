@@ -1,8 +1,9 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { getGroqResponse, getGroqStreamResponse, FrontendMessage } from "@/app/utils/groqClient";
-import { scrapeURL, urlPattern } from "@/app/utils/scrapers";
+import { getGroqResponse, getGroqStreamResponse, FrontendMessage } from "@/lib/groqClient";
+import { scrapeURL, urlPattern } from "@/lib/scrapers";
+import { searchWeb } from "@/lib/webSearch";
 
 const MAX_MESSAGE_LENGTH = 100000;
 const MAX_HISTORY_LENGTH = 50;
@@ -158,9 +159,25 @@ export async function POST(req: Request) {
     const urls = message.match(urlPattern) || [];
     const uniqueUrls = [...new Set(urls)].slice(0, 5);
 
+    // Check if message contains document analysis (uploaded file content)
+    const isDocumentAnalysis = message.startsWith('[Analyzing uploaded document:');
+
     let sources: ScrapedSource[] = [];
+
     if (uniqueUrls.length > 0) {
       sources = await scrapeMultipleUrls(uniqueUrls);
+    } else if (!isDocumentAnalysis) {
+      // No URLs and no file upload — try web search fallback
+      const searchResults = await searchWeb(message);
+      if (searchResults.length > 0) {
+        const searchUrls = searchResults.map(r => r.url);
+        sources = await scrapeMultipleUrls(searchUrls);
+        // Mark as auto-discovered
+        sources = sources.map(s => ({
+          ...s,
+          scraperUsed: s.scraperUsed ? `${s.scraperUsed} (search)` : 'search',
+        }));
+      }
     }
 
     let userQuery = message;
@@ -180,6 +197,8 @@ export async function POST(req: Request) {
     }
 
     const prompt = buildPrompt(userQuery, sources);
+    const sourceSummary = sources.map(s => ({ url: s.url, scraperUsed: s.scraperUsed, error: s.error }));
+
     if (shouldStream) {
       const streamResult = await getGroqStreamResponse(prompt, history);
 
@@ -194,7 +213,7 @@ export async function POST(req: Request) {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
           'Transfer-Encoding': 'chunked',
-          'X-Sources': JSON.stringify(sources.map(s => ({ url: s.url, scraperUsed: s.scraperUsed, error: s.error }))),
+          'X-Sources': JSON.stringify(sourceSummary),
         },
       });
     }

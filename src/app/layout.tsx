@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono } from "next/font/google";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { ToastProvider } from "@/context/ToastContext";
 import "./globals.css";
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -9,8 +11,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Answer Engine",
-  description: "Analyze websites, PDFs, and documents with AI",
+  title: "DeepCite",
+  description:
+    "AI answer engine with source attribution — analyze websites, PDFs, and documents",
 };
 
 export default function RootLayout({
@@ -20,8 +23,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${ibmPlexMono.variable} ${ibmPlexMono.className} antialiased`}>
-        {children}
+      <body
+        className={`${ibmPlexMono.variable} ${ibmPlexMono.className} antialiased`}
+      >
+        <ErrorBoundary>
+          <ToastProvider>{children}</ToastProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

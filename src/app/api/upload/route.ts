@@ -1,13 +1,12 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { parseDocumentFromBuffer } from "@/app/utils/documentParser";
+import { parseDocumentFromBuffer } from "@/lib/documentParser";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
 ];
 
 export async function POST(req: Request) {

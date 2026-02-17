@@ -1,7 +1,8 @@
 import axios, { AxiosResponse } from 'axios';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
-import { parseDocumentFromURL, getDocumentType } from './documentParser';
+import { parseDocumentFromURL, getDocumentType } from '@/lib/documentParser';
+import { getCached, setCache, cacheKey } from '@/lib/cache';
 
 async function retryRequest(url: string, maxRetries: number = 3): Promise<AxiosResponse> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -125,9 +126,6 @@ async function scrapePuppeteer(url: string) {
       };
     });
 
-    await browser.close();
-    browser = null;
-
     let combineContent = [
       scrapedData.title,
       scrapedData.metaDescription,
@@ -162,11 +160,6 @@ async function scrapePuppeteer(url: string) {
   } catch (err) {
     console.error('Error with Puppeteer scraping:', url, err);
 
-    // Ensure browser is closed on error
-    if (browser) {
-      await browser.close();
-    }
-
     return {
       url,
       title: '',
@@ -176,13 +169,33 @@ async function scrapePuppeteer(url: string) {
       scrapeError: `Puppeteer failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
       scraperUsed: 'puppeteer' as const,
     };
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
-export async function scrapeURL(url: string) {
+interface ScrapeResult {
+  url: string;
+  title: string;
+  headings: { h1: string; h2: string; h3: string };
+  metaDescription: string;
+  content: string;
+  scrapeError: string | null;
+  scraperUsed: string;
+}
+
+export async function scrapeURL(url: string): Promise<ScrapeResult> {
   try {
     if (!urlValidationPattern.test(url)) {
       throw new Error('Invalid URL format');
+    }
+
+    // Check cache first
+    const cached = await getCached<ScrapeResult>(cacheKey(url));
+    if (cached && cached.content) {
+      return { ...cached, scraperUsed: `${cached.scraperUsed} (cached)` };
     }
 
     // Check if URL is a document (PDF, DOCX)
@@ -250,11 +263,12 @@ export async function scrapeURL(url: string) {
       const puppeteerResult = await scrapePuppeteer(url);
 
       if (puppeteerResult.content.length > combineContent.length || combineContent.length < 200) {
+        await setCache(cacheKey(url), puppeteerResult);
         return puppeteerResult;
       }
     }
 
-    return {
+    const result = {
       url,
       title: cleanText(title),
       headings: {
@@ -267,6 +281,8 @@ export async function scrapeURL(url: string) {
       scrapeError: null,
       scraperUsed: 'cheerio' as const,
     };
+    await setCache(cacheKey(url), result);
+    return result;
   } catch (err) {
     return {
       url,

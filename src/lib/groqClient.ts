@@ -1,11 +1,9 @@
 import Groq from 'groq-sdk'
-
-if (!process.env.GROQ_API_KEY) {
-  console.error('GROQ_API_KEY is not set in environment variables');
-}
+import { GREETING } from '@/lib/constants';
+import { env } from '@/env';
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: env.GROQ_API_KEY,
 });
 
 interface ChatMessage {
@@ -40,14 +38,25 @@ Guidelines:
 
 You are a tool, not a companion.`;
 
+const KNOWN_GREETINGS = [
+  GREETING,
+  "Hello! How can I help you today?",
+];
+
+/**
+ * Builds the message array for the Groq API.
+ * `history` includes all messages up to AND including the current user message.
+ * We strip the last item (the current user message) since it's re-added as `message`.
+ */
 function buildMessages(message: string, history: FrontendMessage[]): ChatMessage[] {
     const messages: ChatMessage[] = [
         { role: 'system', content: SYSTEM_PROMPT }
     ];
 
-    history
-        .filter(msg => msg.content !== "Hello! How can I help you today?")
-        .slice(0, -1)
+    const pastMessages = history.length > 0 ? history.slice(0, -1) : [];
+
+    pastMessages
+        .filter(msg => !(msg.role === 'ai' && KNOWN_GREETINGS.includes(msg.content)))
         .forEach(msg => {
             messages.push({
                 role: msg.role === 'ai' ? 'assistant' : 'user',
@@ -60,10 +69,6 @@ function buildMessages(message: string, history: FrontendMessage[]): ChatMessage
 }
 
 export async function getGroqResponse(message: string, history: FrontendMessage[] = []): Promise<GroqResponse> {
-    if (!process.env.GROQ_API_KEY) {
-        return { content: '', error: 'API key not configured. Please set GROQ_API_KEY.' };
-    }
-
     try {
         const messages = buildMessages(message, history);
 
